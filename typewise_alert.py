@@ -1,46 +1,30 @@
+from alerts import ControllerAlert, EmailAlert
+from config_parser import ConfigProvider
+from bisect import bisect_right
 
-def infer_breach(value, lowerLimit, upperLimit):
-  if value < lowerLimit:
-    return 'TOO_LOW'
-  if value > upperLimit:
-    return 'TOO_HIGH'
-  return 'NORMAL'
+
+def serialize_limits_to_dict():
+    config = ConfigProvider("config.ini")
+    categories = config.get_categories()
+    breach_types = ("TOO_LOW", "NORMAL", "TOO_HIGH")
+    return {
+        category: {
+            "breach_limits": [
+                config.get_value(field, float, category) for field in ["MIN", "MAX"]
+            ],
+            "breach_types": breach_types,
+        }
+        for category in categories
+    }
 
 
 def classify_temperature_breach(coolingType, temperatureInC):
-  lowerLimit = 0
-  upperLimit = 0
-  if coolingType == 'PASSIVE_COOLING':
-    lowerLimit = 0
-    upperLimit = 35
-  elif coolingType == 'HI_ACTIVE_COOLING':
-    lowerLimit = 0
-    upperLimit = 45
-  elif coolingType == 'MED_ACTIVE_COOLING':
-    lowerLimit = 0
-    upperLimit = 40
-  return infer_breach(temperatureInC, lowerLimit, upperLimit)
+    cooling_config = serialize_limits_to_dict()[coolingType]
+    return cooling_config["breach_types"][
+        bisect_right(cooling_config["breach_limits"], temperatureInC)
+    ]
 
 
 def check_and_alert(alertTarget, batteryChar, temperatureInC):
-  breachType =\
-    classify_temperature_breach(batteryChar['coolingType'], temperatureInC)
-  if alertTarget == 'TO_CONTROLLER':
-    send_to_controller(breachType)
-  elif alertTarget == 'TO_EMAIL':
-    send_to_email(breachType)
-
-
-def send_to_controller(breachType):
-  header = 0xfeed
-  print(f'{header}, {breachType}')
-
-
-def send_to_email(breachType):
-  recepient = "a.b@c.com"
-  if breachType == 'TOO_LOW':
-    print(f'To: {recepient}')
-    print('Hi, the temperature is too low')
-  elif breachType == 'TOO_HIGH':
-    print(f'To: {recepient}')
-    print('Hi, the temperature is too high')
+    breachType = classify_temperature_breach(batteryChar["coolingType"], temperatureInC)
+    return alertTarget.send_alert(breachType)
